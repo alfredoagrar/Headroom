@@ -1,0 +1,58 @@
+name: Headroom
+options:
+  bundleIdPrefix: com.alfredo
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: es
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Firma ad-hoc local hasta tener cuenta Apple Developer
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+
+targets:
+  Headroom:
+    type: application
+    platform: macOS
+    sources: [Headroom]
+    info:
+      path: Headroom/App/Info.plist
+      properties:
+        CFBundleDisplayName: Headroom
+        CFBundleDevelopmentRegion: es
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alfredo.headroom
+        # Necesita leer ~/.codex y el Keychain de Claude Code
+        ENABLE_APP_SANDBOX: NO
+
+  HeadroomTests:
+    type: bundle.unit-test
+    platform: macOS
+    # Compila Core y Providers directamente: tests sin app host
+    sources:
+      - HeadroomTests
+      - Headroom/Core
+      - Headroom/Providers
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alfredo.headroom.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Headroom:
+    build:
+      targets:
+        Headroom: all
+        HeadroomTests: [test]
+    test:
+      targets: [HeadroomTests]

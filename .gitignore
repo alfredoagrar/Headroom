@@ -1,0 +1,12 @@
+# Xcode
+Headroom.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Salida cruda de los scripts de prueba (puede traer datos personales)
+*.raw
