@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# Least privilege: jobs only read the repo. No secrets are used, so fork PRs are safe to run.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  branch-policy:
+    name: Branch policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce gitflow source → target
+        # Branch names are attacker-controlled: pass them via env, never interpolate into the script.
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          echo "PR: $HEAD_REF → $BASE_REF"
+          case "$BASE_REF" in
+            main)
+              [[ "$HEAD_REF" =~ ^(release|hotfix)/ ]] && exit 0
+              echo "::error::Only release/* or hotfix/* branches can merge into main." ;;
+            dev)
+              [[ "$HEAD_REF" =~ ^(feature|fix|chore|docs|refactor|test|ci|release|hotfix|dependabot)/ || "$HEAD_REF" == "main" ]] && exit 0
+              echo "::error::Branches into dev must be named feature/*, fix/*, chore/*, docs/*, refactor/*, test/*, ci/*, release/* or hotfix/*." ;;
+            *)
+              exit 0 ;;
+          esac
+          exit 1
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: ShellCheck
+        run: shellcheck Scripts/*.sh
+
+  build-test:
+    name: Build & Test
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild -project Headroom.xcodeproj -scheme Headroom -destination 'platform=macOS' \
+            -resultBundlePath TestResults.xcresult test | xcbeautify
+      - name: Build Release
+        run: |
+          set -o pipefail
+          xcodebuild -project Headroom.xcodeproj -scheme Headroom -configuration Release build | xcbeautify
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 7

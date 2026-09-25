@@ -10,3 +10,6 @@ xcuserdata/
 
 # Salida cruda de los scripts de prueba (puede traer datos personales)
 *.raw
+
+# Claude Code per-user settings
+.claude/settings.local.json
