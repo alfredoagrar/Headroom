@@ -1,7 +1,7 @@
 import Foundation
 
 enum ResetFormatter {
-    /// Cuenta regresiva compacta: "4d 3h", "2h 14m", "38m".
+    /// Compact countdown: "4d 3h", "2h 14m", "38m".
     static func short(until date: Date, now: Date = .now) -> String {
         let s = Int(date.timeIntervalSince(now))
         guard s > 0 else { return "ahora" }
@@ -14,7 +14,7 @@ enum ResetFormatter {
     private static let weekdays = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
     private static let months = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
-    /// Fecha legible del reinicio: "hoy, 12:29", "mañana, 09:00", "jue 1 oct, 12:59" (+ año si cambia).
+    /// Human-readable reset date: "hoy, 12:29", "mañana, 09:00", "jue 1 oct, 12:59" (year appended when it differs).
     static func absolute(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year, .month, .day, .weekday, .hour, .minute], from: date)
         let time = String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
@@ -29,7 +29,7 @@ enum ResetFormatter {
 }
 
 enum ISODate {
-    /// Acepta "2026-09-25T19:29:59.899633+00:00" (6 decimales) y variantes sin fracción.
+    /// Accepts "2026-09-25T19:29:59.899633+00:00" (6 fractional digits) and variants without a fraction.
     static func parse(_ string: String?) -> Date? {
         guard var s = string else { return nil }
         if let dot = s.firstIndex(of: ".") {

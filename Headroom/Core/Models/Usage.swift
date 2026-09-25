@@ -14,7 +14,7 @@ enum ProviderID: String, Codable, CaseIterable, Sendable {
 enum WindowKind: String, Codable, Sendable {
     case session, daily, weekly, monthly, other
 
-    /// Clasifica una ventana por su duración; los planes cambian la duración (p. ej. Codex Free = 30 días).
+    /// Classifies a window by its duration; plans change durations (e.g. Codex Free = 30 days).
     init(seconds: Int) {
         switch seconds {
         case ..<(12 * 3600): self = .session

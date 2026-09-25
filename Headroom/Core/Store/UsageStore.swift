@@ -47,7 +47,7 @@ final class UsageStore {
         }
     }
 
-    /// Al abrir el popover: refresca solo si el dato tiene más de 60 s.
+    /// On popover open: refresh only if data is older than 60 s.
     func refreshIfStale() {
         guard let lastRefresh, Date.now.timeIntervalSince(lastRefresh) < 60 else {
             Task { await refresh() }
@@ -78,7 +78,7 @@ final class UsageStore {
             case .success(let snapshot):
                 entries[id] = Entry(snapshot: snapshot)
             case .failure(let error):
-                // Conserva el último dato bueno para mostrarlo como desactualizado.
+                // Keep the last good snapshot so it can be shown as stale.
                 entries[id]?.error = error
                 entries[id]?.isLoading = false
             }

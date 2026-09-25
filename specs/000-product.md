@@ -1,268 +1,240 @@
-# Headroom — Especificación v0.2
+---
+id: 000
+title: Headroom — product & architecture
+status: living
+updated: 2026-09-25
+---
 
-> *Cuánto margen te queda antes de topar.*
+# Headroom — Product & Architecture
 
-App nativa de barra de menú para macOS que muestra, en un popover con efecto **Liquid Glass**, cuánto te queda de los límites de uso de tus suscripciones de IA (Claude, Codex/ChatGPT, etc.): ventana corta (sesión/"diaria") y ventana semanal.
+> *How much room you have left before you hit the limit.*
+
+Native macOS menu bar app that shows, in a **Liquid Glass** popover, how much is left of your AI subscription usage limits (Claude, Codex/ChatGPT, …): the short window (session) and the long ones (weekly / monthly), with countdowns and exact reset dates.
+
+This is the **living** top-level spec. Feature work is specified in `specs/NNN-*.md` (see [specs/README.md](README.md)); when a feature changes something described here, update this file in the same PR.
 
 ---
 
-## 1. Objetivos
+## 1. Goals
 
-| # | Objetivo | Métrica de éxito |
-|---|----------|------------------|
-| G1 | Ver el estado de todos mis límites con **un click** | Popover abre en < 150 ms con datos cacheados |
-| G2 | Conectar varias suscripciones sin copiar tokens a mano | Detección automática de Claude Code y Codex CLI ya logueados |
-| G3 | Saber **cuándo** se resetea cada límite | Cuenta regresiva por ventana |
-| G4 | No ser intrusiva | < 30 MB RAM, sin Dock icon, refresco en background barato |
-| G5 | Segura | Tokens solo en Keychain, sin servidores propios, sin telemetría |
+| # | Goal | Success metric |
+|---|------|----------------|
+| G1 | See all my limits with **one click** | Popover opens in < 150 ms from cached data |
+| G2 | Connect several subscriptions without copying tokens | Auto-detect Claude Code and Codex CLI sessions |
+| G3 | Know **when** each limit resets | Countdown **and** absolute date per window |
+| G4 | Unobtrusive | < 30 MB RAM, no Dock icon, cheap background refresh |
+| G5 | Secure | Tokens never leave the Mac except to the provider; no own servers, no telemetry |
 
-### No-objetivos (v1)
-- No calcula costos en USD de API por token (eso es otra app).
-- No sincroniza entre Macs.
-- No soporta iOS / Windows.
-
----
-
-## 2. Conceptos clave (importante)
-
-Los proveedores **no usan exactamente "diario"**. El modelo real es:
-
-| Proveedor | Ventana corta | Ventana larga | Extra |
-|-----------|---------------|---------------|-------|
-| Claude (Pro/Max) | **5 horas** (sesión rodante) | **7 días** (todos los modelos) | 7 días específico de Opus/Sonnet según plan |
-| Codex (ChatGPT Plus/Pro) | **5 horas** ("primary window") | **semanal** ("secondary window") | Créditos extra si aplica |
-| Gemini CLI / Cursor / Copilot | Varía (requests/día, requests/mes) | — | Fase 3 |
-
-Por eso el modelo de datos es genérico: **un proveedor expone N "ventanas" de límite**, cada una con `% usado` + `fecha de reset`. En la UI se etiquetan como "Sesión (5h)" y "Semanal", y "Diario" cuando el proveedor realmente sea diario.
+### Non-goals (v1)
+- API cost tracking in USD per token.
+- Sync between Macs.
+- iOS / Windows.
 
 ---
 
-## 3. Fuentes de datos por proveedor
+## 2. Key concept: limit windows
 
-> ⚠️ Estos endpoints son **internos / no documentados** (los usan las propias apps oficiales y herramientas de la comunidad como CodexBar). Pueden cambiar sin aviso → cada provider debe fallar de forma elegante y la **Fase 0** los valida en tu máquina antes de escribir UI.
+Providers don't really use "daily" limits. What they expose:
 
-### 3.1 Claude (Claude Code / claude.ai Pro/Max)
-- **Credencial (auto-detectada):** Keychain, servicio `Claude Code-credentials` → JSON con `claudeAiOauth.accessToken`, `refreshToken`, `expiresAt`, `subscriptionType`. ✅ Detectado en tu Mac.
-- **Endpoint:** `GET https://api.anthropic.com/api/oauth/usage`
-  - Headers: `Authorization: Bearer <accessToken>`, `anthropic-beta: oauth-2025-04-20`
-  - Respuesta esperada: `five_hour`, `seven_day`, `seven_day_opus` / `seven_day_sonnet` → `{ utilization: 0–100, resets_at: ISO8601 }`
-- **Refresh:** si `expiresAt` venció, no refrescamos nosotros (evita invalidar la sesión de Claude Code); mostramos "Abre Claude Code para renovar sesión". *(Revisar en Fase 0 si es seguro refrescar.)*
-- **Fallback:** cookie `sessionKey` de claude.ai pegada manualmente → `GET https://claude.ai/api/organizations/{orgId}/usage`.
+| Provider | Short window | Long window | Extra |
+|----------|--------------|-------------|-------|
+| Claude (Pro/Max) | **5 hours** (rolling session) | **7 days** (all models) | 7-day per-model (Opus/Sonnet) on some plans, extra-usage credits |
+| Codex (ChatGPT Plus/Pro) | **5 hours** (`primary_window`) | **weekly** (`secondary_window`) | Credits |
+| Codex (ChatGPT Free) | — | **30 days** (`primary_window`) | — |
+| Gemini / Cursor / Copilot | Varies (requests/day, requests/month) | — | Phase 3 |
 
-### 3.2 Codex (OpenAI Codex CLI / ChatGPT Plus/Pro)
-- **Credencial (auto-detectada):** `~/.codex/auth.json` → `tokens.access_token`, `tokens.account_id`. ✅ Detectado en tu Mac.
-- **Endpoint primario:** `GET https://chatgpt.com/backend-api/wham/usage`
-  - Headers: `Authorization: Bearer <access_token>`, `ChatGPT-Account-Id: <account_id>`
-  - Respuesta esperada: `rate_limit.primary_window` / `secondary_window` → `used_percent`, `reset_after_seconds` / `reset_at`, más `plan_type`.
-- **Fallback offline (sin red):** último evento `token_count` con `rate_limits` en `~/.codex/sessions/**/*.jsonl` (el propio CLI lo escribe tras cada turno).
+So the model is generic: **a provider exposes N limit windows**, each with `usedPercent` + `resetsAt`. Window kind and label are **derived from the window duration**, never assumed per provider (Codex Free proved plans change durations).
 
-### 3.3 Proveedores futuros (Fase 3)
-| Proveedor | Fuente probable |
-|-----------|-----------------|
-| Gemini CLI | `~/.gemini/oauth_creds.json` + quota API de Google |
-| Cursor | Cookie de sesión → `cursor.com/api/usage` |
+---
+
+## 3. Data sources per provider
+
+> ⚠️ These endpoints are **internal / undocumented** (used by the official apps and community tools such as CodexBar). They can change without notice → every provider must fail gracefully, keep the last good snapshot, and be covered by fixture tests.
+
+### 3.1 Claude
+- **Credential:** Keychain item `Claude Code-credentials` (read via `/usr/bin/security`, which is already in the item's ACL → no prompt per ad-hoc build) → `claudeAiOauth.{accessToken, expiresAt (ms), subscriptionType, rateLimitTier}`. Fallback file `~/.claude/.credentials.json`.
+  - Empty tokens are treated as "not configured" (seen when Claude Code only runs inside the desktop app).
+  - Access token lives **~1 h**; Claude Code refreshes it. Headroom does **not** refresh (refresh tokens rotate; refreshing would log Claude Code out) → shows "Session expired. Open Claude Code to renew it."
+- **Endpoint:** `GET https://api.anthropic.com/api/oauth/usage`, headers `Authorization: Bearer …`, `anthropic-beta: oauth-2025-04-20`.
+- **Response:** prefer normalized `limits[]` (`kind`, `group`, `percent`, `resets_at`, `severity`); fall back to `five_hour` / `seven_day` / `seven_day_opus` / `seven_day_sonnet`. Details: `extra_usage` (credits, minor units) and `seven_day_breakdown.rows[]`.
+
+### 3.2 Codex
+- **Credential:** `$CODEX_HOME/auth.json` or `~/.codex/auth.json` → `tokens.access_token`, `tokens.account_id`. Expiry read from the JWT `exp`.
+- **Endpoint:** `GET https://chatgpt.com/backend-api/wham/usage`, headers `Authorization: Bearer …`, `ChatGPT-Account-Id`.
+- **Response:** `plan_type`, `rate_limit.{primary_window, secondary_window}` → `used_percent`, `limit_window_seconds`, `reset_at` (epoch s) / `reset_after_seconds`; `code_review_rate_limit`; `credits`.
+- **Offline fallback (planned, spec 004):** last `rate_limits` event in `~/.codex/sessions/**/*.jsonl`.
+
+### 3.3 Future providers (Phase 3)
+| Provider | Likely source |
+|----------|---------------|
+| Gemini CLI | `~/.gemini/oauth_creds.json` + Google quota API |
+| Cursor | Session cookie → `cursor.com/api/usage` |
 | GitHub Copilot | `gh auth token` → `api.github.com/copilot_internal/user` |
-| OpenRouter / API keys | API key → endpoint oficial de créditos |
+
+Use the `add-provider` skill (`.claude/skills/add-provider`) to add one.
 
 ---
 
-## 4. Experiencia de usuario
+## 4. User experience
 
-### 4.1 Ícono en la barra
-- SF Symbol (`gauge.with.dots.needle.67percent`) o mini-barras dibujadas.
-- **Solo ícono** (decisión). El ícono se llena según el % más crítico; el texto `72%` queda como opción en Ajustes (apagada por defecto).
-- Color del ícono: normal / amarillo ≥ 75 % / rojo ≥ 90 % (configurable).
+### 4.1 Menu bar icon
+- **Icon only** (decision). SF Symbol `gauge.with.dots.needle.{0,33,50,67,100}percent`; the needle follows the most critical window.
+- Optional "show % in menu bar" setting, off by default (spec 003).
 
-### 4.2 Popover (click) — Liquid Glass
+### 4.2 Popover (Liquid Glass)
 ```
 ╭──────────────────────────────────────────╮
-│  Headroom                     ⟳  ⚙︎       │
-│                                          │
-│  ┌ Claude · Max 5x ───────────────────┐  │
-│  │ Sesión (5h)  ███████░░░  68%  2h 14m│  │
-│  │ Semanal      ███░░░░░░░  31%  4d 3h │  │
-│  │ Opus semanal █░░░░░░░░░  12%  4d 3h │  │
-│  └─────────────────────────────────────┘  │
-│  ┌ Codex · Plus ──────────────────────┐  │
-│  │ Sesión (5h)  ██████████  96%  38m   │  │
-│  │ Semanal      █████░░░░░  52%  2d 9h │  │
-│  └─────────────────────────────────────┘  │
-│                                          │
-│  Actualizado hace 1 min                  │
+│  Headroom                        ⟳  ⋯    │
+│  ┌ ✦ Claude  Pro ─────────────────── › ┐ │
+│  │ Session (5h)          17%   1h 18m  │ │
+│  │ ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │ │
+│  │ 📅 Resets today, 12:29              │ │
+│  │ Weekly                 3%   6d 0h   │ │
+│  │ █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │ │
+│  │ 📅 Resets Thu Oct 1, 12:59          │ │
+│  └─────────────────────────────────────┘ │
+│  ┌ </> Codex  Free ────────────────────┐ │
+│  │ Monthly                0%  30d 0h   │ │
+│  └─────────────────────────────────────┘ │
+│  Updated 1 min ago                       │
 ╰──────────────────────────────────────────╯
 ```
-- Contenedor: `GlassEffectContainer` + tarjetas con `.glassEffect(.regular, in: .rect(cornerRadius: 16))`.
-- Barras con tinte por proveedor (Claude naranja, Codex verde/negro) y cambio a amarillo/rojo por umbral.
-- Hover sobre una barra → hora exacta de reset ("se reinicia hoy 18:40").
-- Click en tarjeta → expande detalle (plan, última actualización, error si hay).
-- Estados: *cargando* (skeleton glass), *error* (mensaje + botón "Reconectar"), *sin configurar* (CTA "Conectar").
+- `GlassEffectContainer` + cards with `.glassEffect(.regular.tint(providerTint), in: .rect(cornerRadius: 16))`.
+- Bars use the provider tint; yellow ≥ 75 %, red ≥ 90 %.
+- Every window shows countdown + absolute reset date ("today, 12:29" / "tomorrow, 09:05" / "Thu Oct 1, 12:59", year added if different). Hover shows the full timestamp.
+- Tap a card → expands details (extra credits, weekly breakdown).
+- States: loading (redacted placeholder row), error (message; last good data kept and marked stale), not configured (hint with the CLI login command).
+- ⚠️ UI copy is currently **Spanish** (predates the English-only decision). Localization is tracked as an open question (§9).
 
-### 4.3 Ajustes (ventana aparte, estilo System Settings)
-- **Cuentas:** lista de proveedores, estado (✅ detectado / ⚠️ expirado / ➕ conectar), activar/desactivar, reordenar.
-- **General:** abrir al iniciar sesión, intervalo de refresco (1 / 2 / 5 / 15 min), mostrar % en barra.
-- **Notificaciones:** avisar al cruzar 75 % / 90 %, avisar cuando se resetea una ventana que estaba > 90 %.
+### 4.3 Settings (spec 003, planned)
+- **Accounts:** provider list, status, enable/disable, reorder.
+- **General:** launch at login, refresh interval (1 / 2 / 5 / 15 min), show % in menu bar.
+- **Notifications:** crossing 75 % / 90 %, window reset after being > 90 %.
 
 ---
 
-## 5. Arquitectura técnica
+## 5. Architecture
 
 ### 5.1 Stack
-| Decisión | Elección | Motivo |
-|----------|----------|--------|
-| Lenguaje / UI | Swift 6 + SwiftUI | Nativo, Liquid Glass de primera clase |
-| Target | **macOS 26+** | `glassEffect` solo existe en 26 (fallback a `.ultraThinMaterial` si luego bajamos a 15) |
-| Barra de menú | `MenuBarExtra` con `.menuBarExtraStyle(.window)` | Popover de SwiftUI puro |
-| App sin Dock | `LSUIElement = YES` | Solo vive en la barra |
-| Red | `URLSession` async/await | Sin dependencias |
-| Secretos | Keychain (Security.framework) | Tokens manuales cifrados |
-| Persistencia | `UserDefaults` (ajustes) + JSON en Application Support (caché de último snapshot) | Simple |
-| Login item | `SMAppService.mainApp` | API moderna |
-| Notificaciones | `UserNotifications` | — |
-| Proyecto | Xcode project generado con **XcodeGen** (`project.yml`) | Diff-friendly, reproducible |
-| Dependencias | **Cero** en v1 | — |
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Language / UI | Swift 6 (strict concurrency) + SwiftUI | Native, first-class Liquid Glass |
+| Target | **macOS 26+** | `glassEffect` is 26-only |
+| Menu bar | `MenuBarExtra` + `.menuBarExtraStyle(.window)` | Pure SwiftUI popover |
+| No Dock icon | `LSUIElement = YES` | Lives in the menu bar only |
+| Networking | `URLSession` async/await, 10 s timeout | No dependencies |
+| Persistence | JSON snapshot cache in Application Support; `UserDefaults` for settings | Simple |
+| Project | **XcodeGen** (`project.yml`); `.xcodeproj` is generated and git-ignored | Diff-friendly |
+| Tests | Swift Testing, fixture-based, hostless (test target compiles `Core` + `Providers`) | Fast, no app launch |
+| Dependencies | **Zero** | — |
 
-### 5.2 Capas
+### 5.2 Layers
 ```
-┌───────────────────────── UI (SwiftUI) ──────────────────────────┐
-│ MenuBarLabel · PopoverView · ProviderCard · LimitBar · Settings │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ @Observable
-┌───────────────────────── UsageStore ────────────────────────────┐
-│ snapshots por proveedor · scheduler de refresco · umbrales/notif│
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ protocol UsageProvider
-┌──────────────┬────────────────┴────┬────────────────────────────┐
-│ ClaudeProvider│ CodexProvider      │ (Gemini, Cursor, …)        │
-└──────┬───────┴─────────┬──────────┴────────────────────────────┘
-       │ CredentialSource (Keychain ajeno, archivo, token manual)
-       │ HTTPClient (URLSession, timeouts, backoff)
+UI (SwiftUI)         MenuBarLabel · PopoverView · ProviderCard · LimitRow · LimitBar
+        │ @Observable
+UsageStore           entries per provider · refresh loop · snapshot cache
+        │ protocol UsageProvider
+Providers            ClaudeProvider · CodexProvider · (Gemini, Cursor, Copilot)
+        │
+Core                 HTTPClient · KeychainCLI · JWT · ISODate · ResetFormatter · models
 ```
+Rule: `Core` and `Providers` must not import SwiftUI (they are compiled into the test target).
 
-### 5.3 Modelo de datos
+### 5.3 Data model (as built)
 ```swift
-enum ProviderID: String, Codable { case claude, codex /* , gemini, cursor, copilot */ }
+enum ProviderID: String, Codable, CaseIterable, Sendable { case claude, codex }
+enum WindowKind: String, Codable, Sendable { case session, daily, weekly, monthly, other }  // init(seconds:)
 
-enum WindowKind: String, Codable { case session5h, daily, weekly, weeklyModel, monthly }
-
-struct LimitWindow: Codable, Identifiable {
-    let id: String            // "five_hour", "seven_day_opus"
-    let kind: WindowKind
-    let label: String         // "Sesión (5h)", "Opus semanal"
-    let usedPercent: Double   // 0...100
-    let resetsAt: Date?
+struct LimitWindow: Codable, Identifiable, Hashable, Sendable {
+    let id: String; let kind: WindowKind; let label: String
+    let usedPercent: Double; let resetsAt: Date?
 }
-
-struct UsageSnapshot: Codable {
-    let provider: ProviderID
-    let planName: String?     // "Max 5x", "Plus"
-    let windows: [LimitWindow]
-    let fetchedAt: Date
+struct DetailRow: Codable, Hashable, Sendable { let label: String; let value: String }
+struct UsageSnapshot: Codable, Sendable {
+    let provider: ProviderID; let planName: String?
+    let windows: [LimitWindow]; let details: [DetailRow]; let fetchedAt: Date
 }
-
-enum ProviderState {
-    case notConfigured
-    case loading(previous: UsageSnapshot?)
-    case loaded(UsageSnapshot)
-    case failed(ProviderError, lastGood: UsageSnapshot?)
+enum ProviderError: Error, Equatable, Sendable {
+    case notConfigured(hint: String), expired(hint: String), unauthorized, rateLimited
+    case http(Int), network(String), decoding(String)
 }
-
 protocol UsageProvider: Sendable {
     var id: ProviderID { get }
-    var displayName: String { get }
-    func detectCredentials() async -> CredentialStatus
-    func fetchUsage() async throws -> UsageSnapshot
+    func fetchUsage() async throws(ProviderError) -> UsageSnapshot
 }
 ```
+Parsers are pure (`XUsageParser.parse(_ data:, now:)`) so they can be tested against fixtures.
 
-### 5.4 Refresco
-- Timer cada N min (default 2) + refresco inmediato al abrir el popover si el dato tiene > 60 s.
-- Proveedores en paralelo (`TaskGroup`), timeout 10 s c/u.
-- Backoff exponencial en 429/5xx (máx 15 min). Pausa al dormir la Mac (`NSWorkspace` sleep/wake).
-- Siempre se muestra el último snapshot bueno + badge "desactualizado" si falla.
+### 5.4 Refresh
+- Loop every 2 min + refresh on popover open if data is > 60 s old.
+- Providers fetched in parallel (`TaskGroup`).
+- On failure keep the last good snapshot and show the error as "stale".
+- Planned (spec 003): exponential backoff on 429/5xx (max 15 min), pause on sleep.
 
-### 5.5 Seguridad y privacidad
-- Solo **lectura** de credenciales de otras apps; nunca se escriben ni se modifican.
-- Acceso al ítem Keychain de Claude Code dispara el diálogo de macOS "Permitir siempre" la primera vez (esperado).
-- Tokens manuales → Keychain propio (`com.alfredo.headroom`).
-- Sin analytics, sin servidores intermedios; red solo hacia los dominios del proveedor.
-- App **no sandboxed** en v1 (necesita leer `~/.codex` y Keychain ajeno). Distribución directa, firmada con Developer ID + notarizada (no App Store).
+### 5.5 Security & privacy
+- Credentials of other apps are **read-only**; never written or refreshed.
+- Tokens are only sent to the provider's own domain; never logged, never cached to disk (only snapshots are).
+- Not sandboxed (needs `~/.codex` and another app's Keychain item). Direct distribution; ad-hoc signed until an Apple Developer account exists, then Developer ID + notarization.
+- Fixtures must be anonymized (no emails, account/user ids, tokens).
 
 ---
 
-## 6. Organización del proyecto
-
+## 6. Repository layout
 ```
-ailimits/  (app: Headroom)
-├── SPEC.md
-├── README.md
-├── project.yml                     # XcodeGen
+├── AGENTS.md / CLAUDE.md        # AI agent instructions
+├── specs/                       # spec-driven development (this file + NNN-*.md)
+├── .claude/skills, agents       # AI workflows (write-spec, implement-spec, add-provider, release)
+├── .github/                     # CI, CodeQL, release, dependabot, CODEOWNERS
+├── project.yml                  # XcodeGen
 ├── Headroom/
-│   ├── App/
-│   │   ├── HeadroomApp.swift       # @main, MenuBarExtra + Settings scene
-│   │   └── Info.plist              # LSUIElement
-│   ├── Core/
-│   │   ├── Models/                 # LimitWindow, UsageSnapshot, ProviderState
-│   │   ├── Store/UsageStore.swift  # @Observable, scheduler
-│   │   ├── Networking/HTTPClient.swift
-│   │   ├── Credentials/            # KeychainReader, FileCredentialSource
-│   │   └── Notifications/ThresholdNotifier.swift
-│   ├── Providers/
-│   │   ├── UsageProvider.swift     # protocolo + registry
-│   │   ├── Claude/ClaudeProvider.swift + ClaudeDTOs.swift
-│   │   └── Codex/CodexProvider.swift + CodexDTOs.swift + CodexSessionLogReader.swift
-│   ├── UI/
-│   │   ├── MenuBar/MenuBarLabel.swift
-│   │   ├── Popover/PopoverView.swift, ProviderCard.swift, LimitBar.swift
-│   │   ├── Settings/SettingsView.swift, AccountsTab.swift, GeneralTab.swift
-│   │   └── Theme/ProviderTheme.swift
-│   └── Resources/Assets.xcassets    # íconos de proveedores
-├── HeadroomTests/
-│   ├── Fixtures/                   # JSON reales anonimizados de cada endpoint
-│   └── ProviderParsingTests.swift
-└── Scripts/
-    ├── probe_claude.sh             # Fase 0
-    └── probe_codex.sh
+│   ├── App/                     # HeadroomApp (@main), Info.plist
+│   ├── Core/{Models,Store,Networking,Credentials}
+│   ├── Providers/{Claude,Codex}
+│   └── UI/{MenuBar,Popover,Theme}
+├── HeadroomTests/               # Swift Testing + Fixtures/*.json
+└── Scripts/probe_*.sh           # manual endpoint probes (Phase 0)
 ```
 
 ---
-
-## 6.5 Hallazgos Fase 0 (2026-09-25)
-
-| Proveedor | Resultado | Implicación |
-|-----------|-----------|-------------|
-| Claude | Los 4 ítems `Claude Code-credentials*` del Keychain tienen `accessToken` **vacío** (sesión de Claude Code vive en la app de escritorio, cifrada en "Claude Safe Storage"). Endpoint respondió 429 sin auth. | No podemos depender solo del Keychain. Flujo de conexión: (1) Keychain si hay token, (2) **login OAuth propio** de Headroom, (3) cookie `sessionKey` de claude.ai. |
-| Claude (tras `claude auth login`) | ✅ HTTP 200. La respuesta trae un arreglo normalizado `limits[]` (`kind`: session / weekly_all / …, `percent`, `severity`, `resets_at`, `is_active`) además de `five_hour` / `seven_day`. También `extra_usage` / `spend` (créditos extra en USD) y `seven_day_breakdown` (Claude Code vs Chats vs Cowork). El token del Keychain dura **~1 h**. | Parsear `limits[]` primero (sirve también para ventanas nuevas) y usar `five_hour`/`seven_day` como respaldo. Mostrar créditos extra y el desglose semanal en el detalle. Headroom necesita refrescar el token por su cuenta si Claude Code no está abierto. |
-| Codex (live) | `wham/usage` → 401 "Could not parse your authentication token": `access_token` de `~/.codex/auth.json` es del 20-jun, expirado. CLI `codex` no está en PATH. | Headroom debe **refrescar el token** con `refresh_token` (guardando la copia en su propio Keychain, sin tocar `auth.json`) o pedir login. |
-| Codex (tras `codex login`) | ✅ HTTP 200. Plan `free`: una sola ventana `primary_window` con `limit_window_seconds: 2592000` (**30 días**) y `secondary_window: null`. También trae `credits`, `code_review_rate_limit`, `additional_rate_limits`. | La duración de cada ventana **depende del plan**: la etiqueta se calcula con `limit_window_seconds` (5h → "Sesión", 7d → "Semanal", 30d → "Mensual"), no se asume. Las ventanas `null` se ocultan. |
-| Codex (logs) | ✅ Funciona. `rate_limits.primary` (300 min) y `secondary` (10080 min) con `used_percent`, `resets_at` (epoch s), `plan_type: plus`. | Confirma el modelo de datos. Útil como fallback, pero solo está fresco si usas Codex. |
 
 ## 7. Roadmap
 
-| Fase | Entregable | Criterio de "hecho" |
-|------|-----------|---------------------|
-| **0 · Validación** | Scripts `probe_*.sh` que llaman a cada endpoint con tus credenciales locales y guardan el JSON (anonimizado) como fixture | Vemos respuestas reales de Claude y Codex |
-| **1 · MVP** | App en barra + popover glass + Claude y Codex auto-detectados + refresco | Abro la app y veo mis 2 proveedores con barras y resets correctos |
-| **2 · Pulido** | Ajustes, % en barra, colores por umbral, notificaciones, login item, estados de error | Uso diario sin tocar código |
-| **3 · Más proveedores** | Gemini → Cursor → Copilot | Los 3 funcionando |
-| **4 · Distribución** | Firma + notarización, DMG, auto-update (Sparkle). *Sin Apple Developer aún → firma ad-hoc local mientras tanto* | Instalable en otra Mac |
+| Phase | Deliverable | Status | Spec |
+|-------|-------------|--------|------|
+| 0 · Validation | Probe scripts + anonymized fixtures | ✅ Done | — |
+| 1 · MVP | Menu bar + glass popover + Claude & Codex + refresh | ✅ Done | [001](001-mvp-menu-bar.md) |
+| 1.1 | Absolute reset dates | ✅ Done | [002](002-reset-dates.md) |
+| 2 · Polish | Settings, notifications, login item, backoff, Codex log fallback | 📝 Draft | [003](003-settings-and-alerts.md), [004](004-codex-log-fallback.md) |
+| 3 · Providers | Gemini → Cursor → Copilot | ⏳ | via `add-provider` |
+| 4 · Distribution | Developer ID, notarization, DMG, Sparkle | ⏳ Blocked (no Apple Developer account) | — |
 
 ---
 
-## 8. Riesgos
+## 8. Risks
 
-| Riesgo | Impacto | Mitigación |
-|--------|---------|------------|
-| Endpoints internos cambian | Proveedor deja de funcionar | Parsing tolerante, fixtures en tests, fallback (logs de Codex / cookie de Claude), error claro en UI |
-| Token de Claude expira y no se refresca | Datos viejos | Mostrar aviso; evaluar refresh seguro en Fase 0 |
-| Términos de servicio | Uso de API no pública | Solo lectura de *tus* datos, frecuencia baja (≥ 1 min), sin scraping masivo |
-| Liquid Glass solo en macOS 26 | Menos usuarios | Aceptado para v1; fallback a Material si se requiere |
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Internal endpoints change | Provider breaks | Tolerant parsing, fixture tests, fallbacks, clear UI error |
+| Claude token expires while Claude Code is closed | Stale data | "Session expired" hint; last good data kept |
+| Terms of service | Undocumented API use | Read only your own data, low frequency (≥ 1 min) |
+| Liquid Glass is macOS 26-only | Smaller audience | Accepted for v1 |
 
 ---
 
-## 9. Decisiones
-| Tema | Decisión |
-|------|----------|
-| Barra | Solo ícono |
-| Proveedores extra | Gemini, Cursor, Copilot |
-| Nombre | **Headroom** — `com.alfredo.headroom` |
-| Firma | Ad-hoc local hasta tener Apple Developer |
+## 9. Decisions & open questions
+
+| Topic | Decision |
+|-------|----------|
+| Menu bar | Icon only |
+| Extra providers | Gemini, Cursor, Copilot |
+| Name | **Headroom** — `com.alfredo.headroom` |
+| Signing | Ad-hoc until an Apple Developer account exists |
+| Token refresh | Never refresh other apps' tokens |
+| Language | Code, docs, commits in English (from 2026-09-25) |
+
+**Open:** in-app UI copy language (currently Spanish) — translate to English, or localize (en + es)?
+
+### Phase 0 findings (2026-09-25)
+- Claude: `Claude Code-credentials*` items had **empty** tokens until `claude auth login`; then HTTP 200 with `limits[]`, `extra_usage`, `seven_day_breakdown`. Token TTL ~1 h.
+- Codex: expired token → 401 "Could not parse your authentication token"; after `codex login` HTTP 200. Free plan = single 30-day `primary_window`, `secondary_window: null`.
+- Codex session logs contain `rate_limits` (`window_minutes` 300 / 10080) — usable as offline fallback.

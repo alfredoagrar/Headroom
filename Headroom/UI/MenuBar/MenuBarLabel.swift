@@ -8,7 +8,7 @@ struct MenuBarLabel: View {
             .accessibilityLabel("Headroom")
     }
 
-    /// La aguja del ícono sigue al límite más crítico.
+    /// The icon needle follows the most critical limit.
     static func symbol(for percent: Double?) -> String {
         guard let percent else { return "gauge.with.dots.needle.0percent" }
         return switch percent {

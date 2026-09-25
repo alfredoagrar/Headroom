@@ -99,7 +99,7 @@ private func date(_ iso: String) -> Date { ISODate.parse(iso)! }
     @Test func absoluteResetDates() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "America/Phoenix")!
-        let now = date("2026-09-25T18:00:00Z")  // vie 25 sep, 11:00 local
+        let now = date("2026-09-25T18:00:00Z")  // Fri Sep 25, 11:00 local
         #expect(ResetFormatter.absolute(date("2026-09-25T19:29:59Z"), now: now, calendar: cal) == "hoy, 12:29")
         #expect(ResetFormatter.absolute(date("2026-09-26T16:05:00Z"), now: now, calendar: cal) == "mañana, 09:05")
         #expect(ResetFormatter.absolute(date("2026-10-01T19:59:59Z"), now: now, calendar: cal) == "jue 1 oct, 12:59")

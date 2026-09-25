@@ -6,7 +6,7 @@ struct ClaudeCredentials: Sendable {
     let subscriptionType: String?
     let rateLimitTier: String?
 
-    /// Formato de Claude Code: `{"claudeAiOauth": {accessToken, expiresAt (ms), subscriptionType, rateLimitTier}}`.
+    /// Claude Code format: `{"claudeAiOauth": {accessToken, expiresAt (ms), subscriptionType, rateLimitTier}}`.
     static func decode(_ data: Data) -> ClaudeCredentials? {
         struct Envelope: Decodable {
             struct OAuth: Decodable {
@@ -100,7 +100,7 @@ enum ClaudeUsageParser {
 
         var windows: [LimitWindow]
         if let limits = r.limits, !limits.isEmpty {
-            // `limits[]` es la lista normalizada; incluye ventanas nuevas sin cambiar el parser.
+            // `limits[]` is the normalized list; new windows show up without parser changes.
             windows = limits.map { limit in
                 let (kind, label) = describe(kind: limit.kind, group: limit.group)
                 return LimitWindow(id: limit.kind, kind: kind, label: label,

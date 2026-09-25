@@ -1,8 +1,8 @@
 import Foundation
 
 enum KeychainCLI {
-    /// Lee un ítem genérico con /usr/bin/security. Claude Code crea su ítem con esa herramienta,
-    /// así que ya está en la ACL y macOS no pide permiso en cada build ad-hoc de Headroom.
+    /// Reads a generic Keychain item via /usr/bin/security. Claude Code creates its item with that tool,
+    /// so it is already in the ACL and macOS does not prompt on every ad-hoc Headroom build.
     static func readPassword(service: String) -> Data? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
