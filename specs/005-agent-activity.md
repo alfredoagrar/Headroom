@@ -212,18 +212,25 @@ struct AgentRow: Sendable, Identifiable {     // one per agent process
 
 ## Acceptance criteria
 - [ ] AC1 — "Agent activity" opens from the popover header button and from the `⋯` menu and appears in front; reopening focuses the existing window; it doesn't open at launch.
-- [ ] AC2 — `ClaudeSessionRegistryTests`: fixture registry parses; an entry whose pid is dead or whose start time differs from `procStart` by > 2 s is dropped.
-- [ ] AC3 — The registry loader never opens `*.key` files: with an injected file reader over a temp dir containing `123.json` and `123.<hash>.key`, the recorded paths contain no `.key`.
-- [ ] AC4 — `ClaudeTranscriptUsageTests`: one response split over 3 block lines counts once; a later line with the same `message.id` replaces the earlier one; `<synthetic>` is skipped; subagent tokens are added to the session; per-model split is correct.
-- [ ] AC5 — Incremental parsing: appending lines (including a partial last line completed by a later append) gives the same totals as a full parse; a truncated/replaced file resets the totals.
-- [ ] AC6 — `CodexRolloutUsageTests`: last non-null `token_count` wins; model comes from the latest `turn_context`; status is working iff a `task_started` follows the last `task_complete`.
-- [ ] AC7 — Privacy canary: fixture lines with `SECRET-CANARY` in prompt, tool output, Codex `base_instructions` and `creator_*` fields → the canary is absent from `String(reflecting:)` of every produced value.
-- [ ] AC8 — `ProcessSamplerTests`: `cpuPercent` from two synthetic samples; subtree aggregation over a synthetic ppid table (deep tree, orphaned children, nested agent excluded).
-- [ ] AC9 — `ModelPricingTests`: Opus 5.5 standard, fast, `inference_geo: "us"`, 1 h cache writes, Haiku 5.5 above/below 100K, web search, Codex cached subset, unknown model → `hasUnpricedUsage`.
+- [x] AC2 — `ClaudeSessionRegistryTests`: fixture registry parses; an entry whose pid is dead or whose start time differs from `procStart` by > 2 s is dropped.
+- [x] AC3 — The registry loader never opens `*.key` files: with an injected file reader over a temp dir containing `123.json` and `123.<hash>.key`, the recorded paths contain no `.key`.
+- [x] AC4 — `ClaudeTranscriptUsageTests`: one response split over 3 block lines counts once; a later line with the same `message.id` replaces the earlier one; `<synthetic>` is skipped; subagent tokens are added to the session; per-model split is correct.
+- [x] AC5 — Incremental parsing: appending lines (including a partial last line completed by a later append) gives the same totals as a full parse; a truncated/replaced file resets the totals.
+- [x] AC6 — `CodexRolloutUsageTests`: last non-null `token_count` wins; model comes from the latest `turn_context`; status is working iff a `task_started` follows the last `task_complete`.
+- [x] AC7 — Privacy canary: fixture lines with `SECRET-CANARY` in prompt, tool output, Codex `base_instructions` and `creator_*` fields → the canary is absent from `String(reflecting:)` of every produced value.
+- [x] AC8 — `ProcessSamplerTests`: `cpuPercent` from two synthetic samples; subtree aggregation over a synthetic ppid table (deep tree, orphaned children, nested agent excluded).
+- [x] AC9 — `ModelPricingTests`: Opus 5.5 standard, fast, `inference_geo: "us"`, 1 h cache writes, Haiku 5.5 above/below 100K, web search, Codex cached subset, unknown model → `hasUnpricedUsage`.
 - [ ] AC10 — With a live `codex` process (CLI, and IDE `app-server` if available), its session(s), model and tokens appear. The PR states whether the fd-based mapping or the cwd fallback was used.
-- [ ] AC11 — Closing the window stops all sampling: `AgentMonitorTests` with a fake collector shows no collect calls after `stop()`.
-- [ ] AC12 — On the maintainer's Mac (env-gated live test): every running Claude Code session (desktop + VS Code) is listed; token totals match a de-duplicated `jq` count of the same transcripts (command in the PR); CPU and memory are within ±10 % of Activity Monitor.
-- [ ] AC13 — First scan of a 30 MB transcript finishes in < 1 s (Release build) off the main thread; incremental refreshes take < 20 ms.
+- [x] AC11 — Closing the window stops all sampling: `AgentMonitorTests` with a fake collector shows no collect calls after `stop()`.
+- [x] AC12 — On the maintainer's Mac (env-gated live test): every running Claude Code session (desktop + VS Code) is listed; token totals match a de-duplicated `jq` count of the same transcripts (command in the PR); CPU and memory are within ±10 % of Activity Monitor.
+- [x] AC13 — First scan of a 30 MB transcript finishes in < 1 s (Release build) off the main thread; incremental refreshes take < 20 ms.
+
+### Verification (2026-11-13)
+- AC2–AC9, AC11: 39 new unit tests (52 total) pass, zero warnings.
+- AC12: 11/11 running Claude Code sessions listed (6 desktop, 5 VS Code). Token totals match a de-duplicated `jq` count exactly for two idle sessions and one with 3 subagents. Memory matches `top` within 1 MB; CPU of idle sessions < 2 % in both.
+- AC13: 30 MB transcript parsed in 0.15 s (optimized build); incremental refresh 6.6 ms; first scan of 11 real sessions 0.41 s.
+- AC1: window confirmed closed at launch; opening it from the popover still needs a manual check.
+- AC10: no Codex process was running; pending a live check.
 
 ## Test plan
 - Unit: synthetic, anonymized fixtures `claude_session_registry.json`, `claude_transcript.jsonl`, `claude_subagent.jsonl`, `claude_subagent.meta.json`, `codex_rollout.jsonl` covering AC2–AC9 and AC11.

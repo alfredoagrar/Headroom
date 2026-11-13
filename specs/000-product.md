@@ -131,13 +131,18 @@ Use the `add-provider` skill (`.claude/skills/add-provider`) to add one.
 ### 5.2 Layers
 ```
 UI (SwiftUI)         MenuBarLabel · PopoverView · ProviderCard · LimitRow · LimitBar
+                     AgentActivityWindow · AgentInspector                      (spec 005)
         │ @Observable
 UsageStore           entries per provider · refresh loop · snapshot cache
-        │ protocol UsageProvider
+AgentMonitor         runs only while the agent window is open                 (spec 005)
+        │ protocol UsageProvider / AgentCollecting
 Providers            ClaudeProvider · CodexProvider · (Gemini, Cursor, Copilot)
+                     ClaudeSessionRegistry · ClaudeTranscriptUsage · CodexRolloutUsage
         │
 Core                 HTTPClient · KeychainCLI · JWT · ISODate · ResetFormatter · models
+                     Agents/: LibProc · ProcessTree · JSONLTail · ModelPricing · AgentCollector
 ```
+The agent window's data sources, pricing rules and privacy constraints are specified in [005](005-agent-activity.md).
 Rule: `Core` and `Providers` must not import SwiftUI (they are compiled into the test target).
 
 ### 5.3 Data model (as built)
@@ -188,9 +193,9 @@ Parsers are pure (`XUsageParser.parse(_ data:, now:)`) so they can be tested aga
 ├── project.yml                  # XcodeGen
 ├── Headroom/
 │   ├── App/                     # HeadroomApp (@main), Info.plist
-│   ├── Core/{Models,Store,Networking,Credentials}
+│   ├── Core/{Models,Store,Networking,Credentials,Agents}
 │   ├── Providers/{Claude,Codex}
-│   └── UI/{MenuBar,Popover,Theme}
+│   └── UI/{MenuBar,Popover,Agents,Theme}
 ├── HeadroomTests/               # Swift Testing + Fixtures/*.json
 └── Scripts/probe_*.sh           # manual endpoint probes (Phase 0)
 ```
