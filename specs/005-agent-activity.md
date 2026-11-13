@@ -104,11 +104,11 @@ Rules, applied **per API response** (de-duplicated message):
 │ ╭ 11 agents ╮ ╭ 1 working ╮ ╭ CPU 23% ╮ ╭ Memory 1.6 GB ╮ ╭ Tokens 24.1M ╮ ╭ Est. $31.40 ╮ │
 │                                                                               │
 │  Agent            Project       Status     CPU   Memory  Uptime  Tokens  Est. │
-│  ● Claude Code    ailimits      Working  19.7%   310 MB  2m       3.4M  $4.62 │
+│  ● Claude Code    headroom      Working  19.7%   310 MB  2m       3.4M  $4.62 │
 │    Desktop · Headroom agent activity spec · Opus 5.5                          │
-│  ○ Claude Code    TMNA86        Idle 12m  0.1%   115 MB  2h 22m   812K  $1.10 │
+│  ○ Claude Code    webapp        Idle 12m  0.1%   115 MB  2h 22m   812K  $1.10 │
 │    VS Code · Fix login redirect · Opus 5.5                                    │
-│  ○ Codex          sketch_nov9a  Idle      0.0%    41 MB  4d 2h     14K <$0.01 │
+│  ○ Codex          sketch        Idle      0.0%    41 MB  4d 2h     14K <$0.01 │
 │    Exec · gpt-6-luna                                                          │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -117,8 +117,8 @@ Rules, applied **per API response** (de-duplicated message):
 ```
 Claude Code · Desktop                     ● Working
 Headroom agent activity spec
-~/Documents/apps/ailimits
-PID 4742 · v2.1.321 · started today, 20:57
+~/Projects/headroom
+PID 4242 · v2.1.321 · started today, 20:57
 
 Tokens (session)               3.4M
   Input                        2.1K
