@@ -50,11 +50,10 @@ struct AgentLiveTests {
         let start = clock.now
         var tail = JSONLTail()
         var usage = ClaudeTranscriptUsage()
-        let (lines, _) = try tail.readNewLines(at: url, stamp: try #require(FileStamp.of(url)))
-        lines.forEach { usage.consume($0) }
+        try tail.drain(url, into: &usage)
         let elapsed = clock.now - start
 
-        print("[live] \(data.count / 1_000_000) MB, \(lines.count) lines, \(usage.messages.count) responses in \(elapsed)")
+        print("[live] \(data.count / 1_000_000) MB, \(usage.messages.count) responses in \(elapsed)")
         #expect(usage.messages.count == (index + 2) / 3)
         #if !DEBUG
         #expect(elapsed < .seconds(1))

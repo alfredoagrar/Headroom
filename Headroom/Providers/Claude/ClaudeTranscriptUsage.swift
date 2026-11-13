@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Claude Code writes one line per content block and every block line repeats the response's full
 /// `usage`, so responses are keyed by `message.id` and the last line wins.
-struct ClaudeTranscriptUsage: Sendable {
+struct ClaudeTranscriptUsage: Sendable, JSONLConsumer {
     private(set) var messages: [String: ClaudeMessageUsage] = [:]
     /// Model of the most recent assistant line.
     private(set) var lastModel: String?
@@ -34,16 +34,16 @@ struct ClaudeTranscriptUsage: Sendable {
               let message = entry.message, let model = message.model, model != "<synthetic>",
               let raw = message.usage, let key = message.id ?? entry.requestId ?? entry.uuid else { return nil }
 
-        let writes = raw.cacheCreationInputTokens ?? 0
-        var write5m = raw.cacheCreation?.ephemeral5m ?? 0
-        let write1h = raw.cacheCreation?.ephemeral1h ?? 0
+        let writes = TokenCount.clamp(raw.cacheCreationInputTokens)
+        var write5m = TokenCount.clamp(raw.cacheCreation?.ephemeral5m)
+        let write1h = TokenCount.clamp(raw.cacheCreation?.ephemeral1h)
         if write5m + write1h < writes { write5m += writes - write5m - write1h }  // unsplit writes price as 5 m
 
         let usage = ClaudeMessageUsage(
-            model: model, input: raw.inputTokens ?? 0, output: raw.outputTokens ?? 0,
-            cacheRead: raw.cacheReadInputTokens ?? 0, cacheWrite5m: write5m, cacheWrite1h: write1h,
-            thinking: raw.outputTokensDetails?.thinkingTokens ?? 0,
-            webSearches: raw.serverToolUse?.webSearchRequests ?? 0,
+            model: model, input: TokenCount.clamp(raw.inputTokens), output: TokenCount.clamp(raw.outputTokens),
+            cacheRead: TokenCount.clamp(raw.cacheReadInputTokens), cacheWrite5m: write5m, cacheWrite1h: write1h,
+            thinking: TokenCount.clamp(raw.outputTokensDetails?.thinkingTokens),
+            webSearches: TokenCount.clamp(raw.serverToolUse?.webSearchRequests),
             speed: raw.speed, inferenceGeo: raw.inferenceGeo)
         return (key, usage)
     }

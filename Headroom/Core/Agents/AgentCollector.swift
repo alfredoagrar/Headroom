@@ -16,6 +16,7 @@ actor AgentCollector: AgentCollecting {
     private var cpuSamples: [Int32: CPUSample] = [:]
     private var claudeSessions: [String: ClaudeSessionState] = [:]
     private var codexFiles: [String: CodexFileState] = [:]
+    private var codexHeads: [String: CodexHead] = [:]
     private var codexAssignments: [Int32: [String]] = [:]
     private var codexScanned = false
 
@@ -123,7 +124,7 @@ actor AgentCollector: AgentCollecting {
     private struct TranscriptState: Sendable {
         var tail = JSONLTail()
         var usage = ClaudeTranscriptUsage()
-        var stamp: FileStamp?
+        var modified: Date? { tail.stamp?.modified }
     }
 
     private struct SubagentState: Sendable {
@@ -140,7 +141,8 @@ actor AgentCollector: AgentCollecting {
 
     private func refreshClaude(_ entries: some Sequence<ClaudeRegistryEntry>) {
         for entry in entries {
-            var state = claudeSessions[entry.sessionID] ?? ClaudeSessionState()
+            // Taken out of the dictionary so the update doesn't copy the accumulated totals.
+            var state = claudeSessions.removeValue(forKey: entry.sessionID) ?? ClaudeSessionState()
             if state.transcriptURL == nil { state.transcriptURL = transcriptURL(for: entry.sessionID) }
             if let url = state.transcriptURL {
                 Self.refresh(&state.main, url: url)
@@ -162,22 +164,18 @@ actor AgentCollector: AgentCollecting {
         let folder = transcript.deletingLastPathComponent().appending(path: sessionID).appending(path: "subagents")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         for name in names where name.hasPrefix("agent-") && name.hasSuffix(".jsonl") {
-            var sub = state.subagents[name] ?? SubagentState()
+            var sub = state.subagents.removeValue(forKey: name) ?? SubagentState()
             Self.refresh(&sub.transcript, url: folder.appending(path: name))
             if sub.meta == nil {
                 let meta = folder.appending(path: String(name.dropLast(".jsonl".count)) + ".meta.json")
-                sub.meta = (try? Data(contentsOf: meta)).flatMap(ClaudeSubagentMeta.parse)
+                sub.meta = RegularFile.contents(of: meta, maxBytes: 64 << 10).flatMap(ClaudeSubagentMeta.parse)
             }
             state.subagents[name] = sub
         }
     }
 
     private static func refresh(_ state: inout TranscriptState, url: URL) {
-        guard let stamp = FileStamp.of(url), stamp != state.stamp else { return }
-        guard let (lines, fromStart) = try? state.tail.readNewLines(at: url, stamp: stamp) else { return }
-        if fromStart { state.usage.reset() }
-        for line in lines { state.usage.consume(line) }
-        state.stamp = stamp
+        try? state.tail.drain(url, into: &state.usage)  // unreadable now: keep the last totals
     }
 
     private func claudeSession(_ entry: ClaudeRegistryEntry, executablePath: String) -> AgentSession {
@@ -193,15 +191,15 @@ actor AgentCollector: AgentCollecting {
             } else {
                 var total = state.main.usage.usage
                 byModel = state.main.usage.byModel
-                lastActivity = Self.latest(lastActivity, state.main.stamp?.modified)
+                lastActivity = Self.latest(lastActivity, state.main.modified)
                 for (name, sub) in state.subagents {
                     let subUsage = sub.transcript.usage.usage
                     total += subUsage
                     byModel.merge(sub.transcript.usage.byModel, uniquingKeysWith: +)
                     subagents.append(AgentSubagent(id: name, agentType: sub.meta?.agentType, description: sub.meta?.description,
                                                    model: sub.transcript.usage.lastModel, usage: subUsage,
-                                                   lastActivity: sub.transcript.stamp?.modified))
-                    lastActivity = Self.latest(lastActivity, sub.transcript.stamp?.modified)
+                                                   lastActivity: sub.transcript.modified))
+                    lastActivity = Self.latest(lastActivity, sub.transcript.modified)
                 }
                 usage = .loaded(total)
             }
@@ -226,7 +224,12 @@ actor AgentCollector: AgentCollecting {
     private struct CodexFileState: Sendable {
         var tail = JSONLTail()
         var usage = CodexRolloutUsage()
-        var stamp: FileStamp?
+    }
+
+    /// `session_meta` of a rollout that isn't assigned yet; only the first line is read.
+    private struct CodexHead: Sendable {
+        let cwd: String
+        let startedAt: Date?
     }
 
     private func refreshCodex(agents: Set<Int32>, byPID: [Int32: ProcessEntry], now: Date) {
@@ -243,42 +246,48 @@ actor AgentCollector: AgentCollecting {
             }
         }
 
-        var considered = Set(assignments.values.joined())
+        let claimed = Set(assignments.values.joined())
+        var candidates: Set<String> = []
         // Fallback when a process doesn't keep its rollout open: match by cwd and start time.
         if let earliest = unmapped.map(\.startedAt).min() {
             var rollouts: [(path: String, cwd: String, startedAt: Date)] = []
             for url in CodexRolloutFinder.candidateFiles(root: codexRoot, since: earliest, now: now)
-            where !considered.contains(url.path) {
+            where !claimed.contains(url.path) {
                 guard let stamp = FileStamp.of(url), stamp.modified >= earliest.addingTimeInterval(-60) else { continue }
-                refreshCodexFile(url)
-                considered.insert(url.path)
-                if let usage = codexFiles[url.path]?.usage, let cwd = usage.cwd {
-                    rollouts.append((url.path, cwd, usage.startedAt ?? stamp.modified))
-                }
+                candidates.insert(url.path)
+                guard let head = codexHeads[url.path] ?? Self.readHead(url) else { continue }
+                codexHeads[url.path] = head
+                rollouts.append((url.path, head.cwd, head.startedAt ?? stamp.modified))
             }
             assignments.merge(CodexRolloutFinder.assign(rollouts: rollouts, processes: unmapped)) { $0 + $1 }
         }
 
-        for path in Set(assignments.values.joined()) { refreshCodexFile(URL(fileURLWithPath: path)) }
+        let assigned = Set(assignments.values.joined())
+        for path in assigned { refreshCodexFile(path) }
         codexAssignments = assignments
-        codexFiles = codexFiles.filter { considered.contains($0.key) }
+        codexFiles = codexFiles.filter { assigned.contains($0.key) }
+        codexHeads = codexHeads.filter { candidates.contains($0.key) }
     }
 
-    private func refreshCodexFile(_ url: URL) {
-        var state = codexFiles[url.path] ?? CodexFileState()
-        guard let stamp = FileStamp.of(url), stamp != state.stamp else { return }
-        guard let (lines, fromStart) = try? state.tail.readNewLines(at: url, stamp: stamp) else { return }
-        if fromStart { state.usage.reset() }
-        for line in lines { state.usage.consume(line) }
-        state.stamp = stamp
-        codexFiles[url.path] = state
+    /// `session_meta` is the first line; `base_instructions` can make it tens of KB, so read up to 1 MB.
+    private static func readHead(_ url: URL) -> CodexHead? {
+        guard let head = RegularFile.head(of: url, maxBytes: 1 << 20) else { return nil }
+        var meta = CodexRolloutUsage()
+        meta.consume(Data(head.prefix { $0 != 0x0A }))
+        return meta.cwd.map { CodexHead(cwd: $0, startedAt: meta.startedAt) }
+    }
+
+    private func refreshCodexFile(_ path: String) {
+        var state = codexFiles.removeValue(forKey: path) ?? CodexFileState()
+        try? state.tail.drain(URL(fileURLWithPath: path), into: &state.usage)
+        codexFiles[path] = state
     }
 
     private func codexSessions(pid: Int32, executablePath: String, now: Date) -> [AgentSession] {
         (codexAssignments[pid] ?? []).compactMap { path in
             guard let state = codexFiles[path] else { return nil }
             let rollout = state.usage
-            let modified = state.stamp?.modified
+            let modified = state.tail.stamp?.modified
             // A turn that never logged `task_complete` (crash, kill) shouldn't stay "working" forever.
             let working = rollout.isWorking && (modified.map { now.timeIntervalSince($0) < 1800 } ?? false)
             return AgentSession(id: rollout.sessionID ?? path, kind: .codex, host: rollout.host(executablePath: executablePath),

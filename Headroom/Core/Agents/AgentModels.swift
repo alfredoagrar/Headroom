@@ -58,12 +58,12 @@ struct TokenUsage: Sendable, Hashable {
     /// Subset of `output`; shown for information only.
     var thinking = 0
 
-    var total: Int { input + cacheRead + cacheWrite + output }
+    var total: Int { input.saturatingAdd(cacheRead).saturatingAdd(cacheWrite).saturatingAdd(output) }
 
     static func + (lhs: TokenUsage, rhs: TokenUsage) -> TokenUsage {
-        TokenUsage(input: lhs.input + rhs.input, cacheRead: lhs.cacheRead + rhs.cacheRead,
-                   cacheWrite: lhs.cacheWrite + rhs.cacheWrite, output: lhs.output + rhs.output,
-                   thinking: lhs.thinking + rhs.thinking)
+        TokenUsage(input: lhs.input.saturatingAdd(rhs.input), cacheRead: lhs.cacheRead.saturatingAdd(rhs.cacheRead),
+                   cacheWrite: lhs.cacheWrite.saturatingAdd(rhs.cacheWrite), output: lhs.output.saturatingAdd(rhs.output),
+                   thinking: lhs.thinking.saturatingAdd(rhs.thinking))
     }
 
     static func += (lhs: inout TokenUsage, rhs: TokenUsage) { lhs = lhs + rhs }
@@ -204,7 +204,7 @@ struct AgentSummary: Sendable, Hashable {
             cpuPercent += row.cpuPercent ?? 0
             memoryBytes += row.memoryBytes
             if let usage = row.usage.loaded {
-                tokens += usage.tokens.total
+                tokens = tokens.saturatingAdd(usage.tokens.total)
                 cost += usage.cost
             }
         }

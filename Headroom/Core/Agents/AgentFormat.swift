@@ -43,6 +43,7 @@ enum AgentFormat {
 
     /// "<1m", "2m", "2h 22m", "4d 2h".
     static func duration(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, abs(seconds) < 1e12 else { return "—" }
         let s = Int(seconds)
         guard s >= 60 else { return "<1m" }
         let d = s / 86400, h = (s % 86400) / 3600, m = (s % 3600) / 60
@@ -53,7 +54,9 @@ enum AgentFormat {
 
     /// "5s ago", "12m ago", "3h ago", "2d ago".
     static func ago(_ date: Date, now: Date) -> String {
-        let s = max(0, Int(now.timeIntervalSince(date)))
+        let elapsed = now.timeIntervalSince(date)
+        guard elapsed.isFinite, abs(elapsed) < 1e12 else { return "—" }
+        let s = max(0, Int(elapsed))
         if s < 60 { return "\(s)s ago" }
         if s < 3600 { return "\(s / 60)m ago" }
         if s < 86400 { return "\(s / 3600)h ago" }

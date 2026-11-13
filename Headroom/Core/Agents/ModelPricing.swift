@@ -170,7 +170,8 @@ struct CodexTokenTotals: Sendable, Hashable {
     }
 
     static func + (lhs: CodexTokenTotals, rhs: CodexTokenTotals) -> CodexTokenTotals {
-        CodexTokenTotals(input: lhs.input + rhs.input, cached: lhs.cached + rhs.cached, cacheWrite: lhs.cacheWrite + rhs.cacheWrite,
-                         output: lhs.output + rhs.output, reasoning: lhs.reasoning + rhs.reasoning)
+        CodexTokenTotals(input: lhs.input.saturatingAdd(rhs.input), cached: lhs.cached.saturatingAdd(rhs.cached),
+                         cacheWrite: lhs.cacheWrite.saturatingAdd(rhs.cacheWrite), output: lhs.output.saturatingAdd(rhs.output),
+                         reasoning: lhs.reasoning.saturatingAdd(rhs.reasoning))
     }
 }

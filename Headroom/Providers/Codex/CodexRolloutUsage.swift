@@ -4,7 +4,7 @@ import Foundation
 ///
 /// `token_count` events carry cumulative totals. Each increase is attributed to the model of the
 /// latest `turn_context`, so sessions that switch models are priced per model.
-struct CodexRolloutUsage: Sendable {
+struct CodexRolloutUsage: Sendable, JSONLConsumer {
     private(set) var sessionID: String?
     private(set) var cwd: String?
     private(set) var originator: String?
@@ -42,9 +42,10 @@ struct CodexRolloutUsage: Sendable {
             isWorking = false
         case ("event_msg", "token_count"):
             guard let info = payload.info, let raw = info.totalTokenUsage else { return }
-            let current = CodexTokenTotals(input: raw.inputTokens ?? 0, cached: raw.cachedInputTokens ?? 0,
-                                           cacheWrite: raw.cacheWriteInputTokens ?? 0, output: raw.outputTokens ?? 0,
-                                           reasoning: raw.reasoningOutputTokens ?? 0)
+            let current = CodexTokenTotals(input: TokenCount.clamp(raw.inputTokens), cached: TokenCount.clamp(raw.cachedInputTokens),
+                                           cacheWrite: TokenCount.clamp(raw.cacheWriteInputTokens),
+                                           output: TokenCount.clamp(raw.outputTokens),
+                                           reasoning: TokenCount.clamp(raw.reasoningOutputTokens))
             let key = model ?? "unknown"
             totalsByModel[key] = (totalsByModel[key] ?? CodexTokenTotals()) + current.delta(since: totals)
             totals = current

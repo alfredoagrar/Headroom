@@ -36,12 +36,14 @@ private struct TailReader {
     var tail = JSONLTail()
     var usage = ClaudeTranscriptUsage()
 
-    mutating func pump(_ url: URL) throws {
-        let stamp = try #require(FileStamp.of(url))
-        let (lines, fromStart) = try tail.readNewLines(at: url, stamp: stamp)
-        if fromStart { usage.reset() }
-        lines.forEach { usage.consume($0) }
-    }
+    mutating func pump(_ url: URL) throws { try tail.drain(url, into: &usage) }
+}
+
+private struct LineCollector: JSONLConsumer {
+    var lines: [String] = []
+    var resets = 0
+    mutating func reset() { lines = []; resets += 1 }
+    mutating func consume(_ line: Data) { lines.append(String(decoding: line, as: UTF8.self)) }
 }
 
 // MARK: - Claude Code registry (AC2, AC3)
@@ -502,5 +504,101 @@ private actor CountingCollector: AgentCollecting {
         #expect(session.subagents.map(\.agentType) == ["Explore"])
         #expect(session.byModel["claude-fable-5-2"]?.tokens.total == 1250)
         #expect(!String(reflecting: snapshot.rows).contains("SECRET-CANARY"))
+    }
+}
+
+// MARK: - Hardening (security review findings)
+
+@Suite struct AgentHardeningTests {
+    @Test func registryWithoutStartTimesNeverMatches() throws {
+        let entry = try #require(ClaudeSessionRegistry.parse(Data(#"{"pid":7,"sessionId":"abc","cwd":"/tmp"}"#.utf8)))
+        #expect(!ClaudeSessionRegistry.matches(entry, processStart: Date()))
+        let garbled = try #require(ClaudeSessionRegistry.parse(Data(#"{"pid":7,"sessionId":"abc","procStart":"soon","startedAt":"now"}"#.utf8)))
+        #expect(!ClaudeSessionRegistry.matches(garbled, processStart: Date()))
+    }
+
+    @Test func impossibleTimestampsAreDropped() throws {
+        let json = #"{"pid":7,"sessionId":"abc","status":"idle","statusUpdatedAt":1e300,"startedAt":-5}"#
+        let entry = try #require(ClaudeSessionRegistry.parse(Data(json.utf8)))
+        #expect(entry.statusUpdatedAt == nil)
+        #expect(entry.startedAt == nil)
+        #expect(AgentFormat.duration(-1e297) == "—")
+        #expect(AgentFormat.duration(.nan) == "—")
+        #expect(AgentFormat.ago(Date(timeIntervalSince1970: 1e300), now: Date()) == "—")
+    }
+
+    @Test func hugeAndNegativeTokenCountsAreClamped() {
+        var usage = ClaudeTranscriptUsage()
+        usage.consume(Data(#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":9223372036854775807,"output_tokens":-1000005,"cache_creation_input_tokens":9223372036854775807,"cache_creation":{"ephemeral_5m_input_tokens":9223372036854775807}}}}"#.utf8))
+        usage.consume(Data(#"{"type":"assistant","message":{"id":"m2","model":"claude-opus-5-5","usage":{"input_tokens":5000000000000000000}}}"#.utf8))
+        let tokens = usage.usage.tokens
+        #expect(tokens.input == 2 * TokenCount.maxValue)
+        #expect(tokens.output == 0)
+        #expect(tokens.cacheWrite == TokenCount.maxValue)
+        #expect(tokens.total > 0)
+        #expect(usage.usage.cost.usd >= 0)
+
+        var codex = CodexRolloutUsage()
+        codex.consume(Data(#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":-2,"output_tokens":-7}}}}"#.utf8))
+        codex.consume(Data(#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9223372036854775807}}}}"#.utf8))
+        #expect(codex.totals.input == TokenCount.maxValue)
+        #expect(codex.totals.output == 0)
+    }
+
+    @Test func sumsSaturateInsteadOfTrapping() {
+        let big = TokenUsage(input: .max, cacheRead: .max, cacheWrite: .max, output: .max)
+        #expect((big + big).input == .max)
+        #expect(big.total == .max)
+        #expect(Int.max.saturatingAdd(1) == .max)
+        #expect(Int.min.saturatingAdd(-1) == .min)
+    }
+
+    @Test func refusesSymlinksAndFIFOs() throws {
+        let dir = try makeTempDir()
+        let fifo = dir.appending(path: "pipe.jsonl")
+        #expect(mkfifo(fifo.path, 0o600) == 0)
+        let link = dir.appending(path: "link.jsonl")
+        let target = dir.appending(path: "target.jsonl")
+        try agentFixture("claude_transcript", "jsonl").write(to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        var tail = JSONLTail()
+        var usage = ClaudeTranscriptUsage()
+        #expect(throws: (any Error).self) { try tail.drain(fifo, into: &usage) }  // returns at once: no blocking open
+        #expect(throws: (any Error).self) { try tail.drain(link, into: &usage) }
+        #expect(RegularFile.contents(of: link, maxBytes: 1 << 20) == nil)
+        #expect(RegularFile.contents(of: fifo, maxBytes: 1 << 20) == nil)
+        #expect(usage.messages.isEmpty)
+    }
+
+    @Test func smallFileReadsAreCapped() throws {
+        let url = try makeTempDir().appending(path: "big.json")
+        try Data(repeating: 0x20, count: 70_000).write(to: url)
+        #expect(RegularFile.contents(of: url, maxBytes: 64 << 10) == nil)
+        #expect(RegularFile.head(of: url, maxBytes: 100)?.count == 100)
+    }
+
+    @Test func chunkedReadsMatchAFullParse() throws {
+        let data = try agentFixture("claude_transcript", "jsonl")
+        let url = try makeTempDir().appending(path: "transcript.jsonl")
+        try data.write(to: url)
+        var tail = JSONLTail(chunkSize: 37)
+        var usage = ClaudeTranscriptUsage()
+        try tail.drain(url, into: &usage)
+        #expect(usage.usage == parseTranscript(data).usage)
+    }
+
+    @Test func oversizedLinesAreSkipped() throws {
+        let url = try makeTempDir().appending(path: "lines.jsonl")
+        try Data((String(repeating: "x", count: 200) + "\nok-1\nok-2\n").utf8).write(to: url)
+        var tail = JSONLTail(chunkSize: 16, maxLineBytes: 64)
+        var collector = LineCollector()
+        try tail.drain(url, into: &collector)
+        #expect(collector.lines == ["ok-1", "ok-2"])
+
+        // Unchanged file: nothing is re-read or reset.
+        try tail.drain(url, into: &collector)
+        #expect(collector.resets == 1)
+        #expect(collector.lines.count == 2)
     }
 }
