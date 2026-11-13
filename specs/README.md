@@ -33,3 +33,4 @@ draft ──review──▶ approved ──implement──▶ implemented
 | 002 | [Absolute reset dates](002-reset-dates.md) | implemented |
 | 003 | [Settings, notifications & resilience](003-settings-and-alerts.md) | draft |
 | 004 | [Codex session-log fallback](004-codex-log-fallback.md) | draft |
+| 005 | [Agent activity window](005-agent-activity.md) | draft |

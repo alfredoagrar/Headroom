@@ -205,6 +205,7 @@ Parsers are pure (`XUsageParser.parse(_ data:, now:)`) so they can be tested aga
 | 1 · MVP | Menu bar + glass popover + Claude & Codex + refresh | ✅ Done | [001](001-mvp-menu-bar.md) |
 | 1.1 | Absolute reset dates | ✅ Done | [002](002-reset-dates.md) |
 | 2 · Polish | Settings, notifications, login item, backoff, Codex log fallback | 📝 Draft | [003](003-settings-and-alerts.md), [004](004-codex-log-fallback.md) |
+| 2.5 · Agent activity | Window with running agents, CPU/memory, session tokens | 📝 Draft | [005](005-agent-activity.md) |
 | 3 · Providers | Gemini → Cursor → Copilot | ⏳ | via `add-provider` |
 | 4 · Distribution | Developer ID, notarization, DMG, Sparkle | ⏳ Blocked (no Apple Developer account) | — |
 
