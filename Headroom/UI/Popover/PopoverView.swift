@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @Environment(UsageStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -24,6 +25,12 @@ struct PopoverView: View {
         HStack(spacing: 6) {
             Text("Headroom").font(.headline)
             Spacer()
+            Button(action: showAgentActivity) {
+                Image(systemName: "waveform.path.ecg")
+            }
+            .buttonStyle(.glass)
+            .help("Agent activity")
+
             Button {
                 Task { await store.refresh() }
             } label: {
@@ -35,6 +42,8 @@ struct PopoverView: View {
             .help("Actualizar")
 
             Menu {
+                Button("Agent activity…", action: showAgentActivity)
+                Divider()
                 Button("Salir de Headroom") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
             } label: {
@@ -44,6 +53,11 @@ struct PopoverView: View {
             .buttonStyle(.glass)
             .fixedSize()
         }
+    }
+
+    private func showAgentActivity() {
+        openWindow(id: AgentActivityWindow.windowID)
+        NSApplication.shared.activate()
     }
 
     @ViewBuilder

@@ -26,7 +26,7 @@ This is the **living** top-level spec. Feature work is specified in `specs/NNN-*
 | G5 | Secure | Tokens never leave the Mac except to the provider; no own servers, no telemetry |
 
 ### Non-goals (v1)
-- API cost tracking in USD per token.
+- Billing-accurate cost tracking. The agent window (spec 005) shows API list-price *estimates* only.
 - Sync between Macs.
 - iOS / Windows.
 
@@ -104,7 +104,7 @@ Use the `add-provider` skill (`.claude/skills/add-provider`) to add one.
 - Every window shows countdown + absolute reset date ("today, 12:29" / "tomorrow, 09:05" / "Thu Oct 1, 12:59", year added if different). Hover shows the full timestamp.
 - Tap a card → expands details (extra credits, weekly breakdown).
 - States: loading (redacted placeholder row), error (message; last good data kept and marked stale), not configured (hint with the CLI login command).
-- ⚠️ UI copy is currently **Spanish** (predates the English-only decision). Localization is tracked as an open question (§9).
+- ⚠️ UI copy is still **Spanish** in places. Decided 2026-11-12: the UI is **English everywhere**; the popover is translated in a follow-up PR.
 
 ### 4.3 Settings (spec 003, planned)
 - **Accounts:** provider list, status, enable/disable, reorder.
@@ -131,13 +131,18 @@ Use the `add-provider` skill (`.claude/skills/add-provider`) to add one.
 ### 5.2 Layers
 ```
 UI (SwiftUI)         MenuBarLabel · PopoverView · ProviderCard · LimitRow · LimitBar
+                     AgentActivityWindow · AgentInspector                      (spec 005)
         │ @Observable
 UsageStore           entries per provider · refresh loop · snapshot cache
-        │ protocol UsageProvider
+AgentMonitor         runs only while the agent window is open                 (spec 005)
+        │ protocol UsageProvider / AgentCollecting
 Providers            ClaudeProvider · CodexProvider · (Gemini, Cursor, Copilot)
+                     ClaudeSessionRegistry · ClaudeTranscriptUsage · CodexRolloutUsage
         │
 Core                 HTTPClient · KeychainCLI · JWT · ISODate · ResetFormatter · models
+                     Agents/: LibProc · ProcessTree · JSONLTail · ModelPricing · AgentCollector
 ```
+The agent window's data sources, pricing rules and privacy constraints are specified in [005](005-agent-activity.md).
 Rule: `Core` and `Providers` must not import SwiftUI (they are compiled into the test target).
 
 ### 5.3 Data model (as built)
@@ -188,9 +193,9 @@ Parsers are pure (`XUsageParser.parse(_ data:, now:)`) so they can be tested aga
 ├── project.yml                  # XcodeGen
 ├── Headroom/
 │   ├── App/                     # HeadroomApp (@main), Info.plist
-│   ├── Core/{Models,Store,Networking,Credentials}
+│   ├── Core/{Models,Store,Networking,Credentials,Agents}
 │   ├── Providers/{Claude,Codex}
-│   └── UI/{MenuBar,Popover,Theme}
+│   └── UI/{MenuBar,Popover,Agents,Theme}
 ├── HeadroomTests/               # Swift Testing + Fixtures/*.json
 └── Scripts/probe_*.sh           # manual endpoint probes (Phase 0)
 ```
@@ -205,6 +210,7 @@ Parsers are pure (`XUsageParser.parse(_ data:, now:)`) so they can be tested aga
 | 1 · MVP | Menu bar + glass popover + Claude & Codex + refresh | ✅ Done | [001](001-mvp-menu-bar.md) |
 | 1.1 | Absolute reset dates | ✅ Done | [002](002-reset-dates.md) |
 | 2 · Polish | Settings, notifications, login item, backoff, Codex log fallback | 📝 Draft | [003](003-settings-and-alerts.md), [004](004-codex-log-fallback.md) |
+| 2.5 · Agent activity | Window with running agents, CPU/memory, session tokens, est. cost | ✅ Approved | [005](005-agent-activity.md) |
 | 3 · Providers | Gemini → Cursor → Copilot | ⏳ | via `add-provider` |
 | 4 · Distribution | Developer ID, notarization, DMG, Sparkle | ⏳ Blocked (no Apple Developer account) | — |
 
@@ -230,9 +236,8 @@ Parsers are pure (`XUsageParser.parse(_ data:, now:)`) so they can be tested aga
 | Name | **Headroom** — `com.alfredo.headroom` |
 | Signing | Ad-hoc until an Apple Developer account exists |
 | Token refresh | Never refresh other apps' tokens |
-| Language | Code, docs, commits in English (from 2026-09-25) |
-
-**Open:** in-app UI copy language (currently Spanish) — translate to English, or localize (en + es)?
+| Language | Code, docs, commits in English (from 2026-09-25); in-app UI in English (from 2026-11-12) |
+| Cost | API list-price estimates in the agent window only (spec 005) |
 
 ### Phase 0 findings (2026-09-25)
 - Claude: `Claude Code-credentials*` items had **empty** tokens until `claude auth login`; then HTTP 200 with `limits[]`, `extra_usage`, `seven_day_breakdown`. Token TTL ~1 h.
