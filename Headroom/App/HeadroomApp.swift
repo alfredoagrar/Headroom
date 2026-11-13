@@ -3,6 +3,8 @@ import SwiftUI
 @main
 struct HeadroomApp: App {
     @State private var store: UsageStore
+    /// App-owned so parsed session totals survive closing the window.
+    @State private var agents = AgentMonitor()
 
     init() {
         let store = UsageStore.live()
@@ -17,5 +19,12 @@ struct HeadroomApp: App {
             MenuBarLabel(store: store)
         }
         .menuBarExtraStyle(.window)
+
+        Window("Agent activity", id: AgentActivityWindow.windowID) {
+            AgentActivityWindow().environment(agents)
+        }
+        .defaultSize(width: 980, height: 560)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
 }
