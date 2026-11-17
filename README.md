@@ -3,7 +3,7 @@
 [![CI](https://github.com/alfredoagrar/Headroom/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/alfredoagrar/Headroom/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/alfredoagrar/Headroom/actions/workflows/codeql.yml/badge.svg?branch=dev)](https://github.com/alfredoagrar/Headroom/actions/workflows/codeql.yml)
 
-macOS 26+ menu bar app that shows your AI usage limits (Claude, Codex, …) in a Liquid Glass popover: session (5h), weekly and monthly windows, with countdowns and exact reset dates. Specs: [specs/](specs/README.md) · AI agent guide: [AGENTS.md](AGENTS.md).
+macOS 26+ menu bar app that shows your AI usage limits (Claude, Codex, …) in a Liquid Glass popover: session (5h), weekly and monthly windows, with countdowns and exact reset dates. An **Agent activity** window lists running Claude Code and Codex agents with CPU, memory, session tokens and an estimated API cost. Specs: [specs/](specs/README.md) · AI agent guide: [AGENTS.md](AGENTS.md).
 
 ## Requirements
 - macOS 26, Xcode 26+, `brew install xcodegen`

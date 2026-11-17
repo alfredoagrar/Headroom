@@ -7,7 +7,7 @@ Instructions for AI coding agents (Claude Code, Codex, Copilot, Cursor, …) wor
 2. The spec you are implementing in `specs/NNN-*.md`. **No spec, no feature**: if the task is non-trivial and has no spec, write one first (template: `specs/_template.md`).
 
 ## Language
-Everything in **English**: code, comments, docs, commit messages, PR descriptions. Exception: in-app UI copy is currently Spanish — don't translate it unless a spec says so.
+Everything in **English**: code, comments, docs, commit messages, PR descriptions, and in-app UI copy (decided in spec 005). Some popover strings are still Spanish until their translation PR lands; write new UI copy in English.
 
 ## Workflow (gitflow)
 - Never commit to `main` or `dev` directly (rulesets block it anyway).
@@ -23,6 +23,7 @@ xcodebuild -project Headroom.xcodeproj -scheme Headroom -destination 'platform=m
 xcodebuild -project Headroom.xcodeproj -scheme Headroom build
 open ~/Library/Developer/Xcode/DerivedData/Headroom-*/Build/Products/Debug/Headroom.app   # pkill -x Headroom first
 shellcheck Scripts/*.sh && actionlint
+TEST_RUNNER_HEADROOM_LIVE_TESTS=1 xcodebuild -project Headroom.xcodeproj -scheme Headroom -configuration Release -destination 'platform=macOS' test   # opt-in checks against this Mac's real ~/.claude and ~/.codex
 ```
 - Never pass `-derivedDataPath` inside the repo: `~/Documents` is iCloud-synced and `codesign` fails on extended attributes.
 - The `.xcodeproj` is generated and git-ignored — edit `project.yml`, not the project.
