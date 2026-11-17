@@ -26,6 +26,9 @@ targets:
       path: Headroom/App/Info.plist
       properties:
         CFBundleDisplayName: Headroom
+        # XcodeGen defaults these to "1.0"/"1"; read them from build settings so releases can set the version
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDevelopmentRegion: es
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.developer-tools
